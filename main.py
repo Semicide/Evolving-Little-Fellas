@@ -9,7 +9,7 @@ import random
 
 FAUNA_WIDTH, FAUNA_HEIGHT = 640, 640
 BUTTON_AREA_WIDTH = 400
-FPS = 30
+FPS = 60
 YELLOW = (255, 236, 0)
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
@@ -18,10 +18,17 @@ GREEN = (109, 206, 70)
 LGREEN = (95, 191, 56)
 GREY = (194, 194, 194)
 BLUE = (0, 0, 255)
-LIFE_TIME = 300
+LIFE_TIME = 600
 Population = 100
 time_scale = 1
-min_time_scale = 0.1  # Set a minimum time scale to prevent stopping
+left_zone = pygame.Rect(0, 0, 0.1 * FAUNA_WIDTH, FAUNA_HEIGHT)
+right_zone = pygame.Rect(0.9 * FAUNA_WIDTH, 0, 0.1 * FAUNA_WIDTH, FAUNA_HEIGHT)
+middle_zone = pygame.Rect(FAUNA_WIDTH // 2 - 50, FAUNA_HEIGHT // 2 - 50, 100, 100)
+top_left=pygame.Rect(0, 0, 0.1 * FAUNA_WIDTH, 0.1 * FAUNA_HEIGHT)
+top_right=pygame.Rect(0.9 * FAUNA_WIDTH, 0, 0.1 * FAUNA_WIDTH, 0.1 * FAUNA_HEIGHT)
+bottom_left= pygame.Rect(0, 0.9 * FAUNA_HEIGHT, 0.1 * FAUNA_WIDTH, 0.1 * FAUNA_HEIGHT)
+bottom_right = pygame.Rect(0.9 * FAUNA_WIDTH, 0.9 * FAUNA_HEIGHT, 0.1 * FAUNA_WIDTH, 0.1 * FAUNA_HEIGHT)
+min_time_scale = 0.1
 r = [0, 1]
 l = [0, -1]
 u = [1, 0]
@@ -44,8 +51,9 @@ class Individual(pygame.sprite.Sprite):
         # Initialize genes
         # Inside the __init__ method of the Individual class
         if genes is None:
-            direction1 = random.choice(directions)
-            direction2 = random.choice(directions)
+            direction1 = directions[random.randint(0, len(directions) - 1)]
+            direction2 = directions[random.randint(0, len(directions) - 1)]
+
             dominance1 = random.uniform(0, 1)
             dominance2 = 1 - dominance1
             size = random.randint(0, 2)
@@ -77,6 +85,16 @@ class Individual(pygame.sprite.Sprite):
         self.rect.right = min(self.rect.right, FAUNA_WIDTH)
         self.rect.top = max(self.rect.top, 0)
         self.rect.bottom = min(self.rect.bottom, FAUNA_HEIGHT)
+
+    def check_collision_zones(self):
+        if left_zone.colliderect(self.rect) or right_zone.colliderect(self.rect):
+            if top_left.colliderect(self.rect) or top_right.colliderect(self.rect) \
+                    or bottom_left.colliderect(self.rect) or bottom_right.colliderect(self.rect):
+                self.fitness = 1.0
+            else:
+                self.fitness = 0.5
+        else:
+            self.fitness = 0
     # Inside the Individual class
     def move(self):
         # Update direction based on dominance
@@ -107,35 +125,48 @@ class Individual(pygame.sprite.Sprite):
         return movement_x, movement_y
 
     def crossover(self, partner):
-        # Ebeveynlerin None olup olmadığını kontrol et
         if partner is None:
-            return self  # Eğer partner None ise, kendini döndür
+            return self
+        print("Parent 1 genes:", self.genes)
+        print("Parent 2 genes:", partner.genes)
 
-        # Crossover genes
         crossover_point = random.randint(1, len(self.genes) - 2)
         child_genes = self.genes[:crossover_point] + partner.genes[crossover_point:]
 
-        # Crossover move biases
-        crossover_bias_point = random.randint(1, len(self.move_biases) - 1)
-        child_genes[4:6] = self.move_biases[:crossover_bias_point] + partner.move_biases[crossover_bias_point:]
+        crossover_bias_point = random.randint(1, len(self.genes) - 1)
+        child_genes[4:6] = (
+                self.genes[4:6][:crossover_bias_point] + partner.genes[4:6][crossover_bias_point:]
+        )
 
-        # Mutate size and speed
-        mutation_range = 2
-        child_genes[2] = (self.genes[2] + partner.genes[2]) / 2 + random.uniform(-mutation_range, mutation_range)
-        child_genes[3] = (self.genes[3] + partner.genes[3]) / 2 + random.uniform(-mutation_range, mutation_range)
+        mutation_rate = 0.1
+        mutation_range = 0.2
+        for i in range(len(child_genes)):
+            if isinstance(child_genes[i], (int, float)):  # Check if the gene is an int or float
+                if random.random() < mutation_rate:
+                    child_genes[i] += random.uniform(-mutation_range, mutation_range)
+                    # Ensure that the mutated value stays within bounds
+                    if i == 4:  # Handling size gene
+                        child_genes[i] = max(0, min(2, child_genes[i]))
+                    elif i == 5:  # Handling speed gene
+                        child_genes[i] = max(0, min(3, child_genes[i]))
 
+        print("Child genes after mutation:", child_genes)
         return Individual(child_genes)
 
     def mutate(self, mutation_range=0.2):
         mutation_rate = 0.1
         for i in range(len(self.genes)):
-            if random.random() < mutation_rate:
-                self.genes[i] += random.uniform(-mutation_range, mutation_range)
+            if isinstance(self.genes[i], (int, float)):  # Check if the gene is an int or float
+                if random.random() < mutation_rate:
+                    self.genes[i] += random.uniform(-mutation_range, mutation_range)
+                    # Ensure that the mutated value stays within bounds
+                    if i == 4:  # Handling size gene
+                        self.genes[i] = max(0, min(2, self.genes[i]))
+                    elif i == 5:  # Handling speed gene
+                        self.genes[i] = max(0, min(3, self.genes[i]))
 
         # Update move biases after mutation
-        self.move_biases = self.genes[4:6]
-
-
+        self.genes[4:6] = [max(0, min(1, val)) for val in self.genes[4:6]]
 
 
 def draw_square(top_left, size, surface, color):
@@ -161,10 +192,13 @@ class Button:
         return self.rect.collidepoint(mouse_pos)
 
 
+generation_text = "Generation: 0   Speed: 1"
+
 def update_generation(steps):
-    generation_time = steps * time_scale // (FPS * 10)  # Calculate generation time based on FPS (game speed)
-    return f"Generation: {int(generation_time)}   " \
-           f"Speed: {int(time_scale)}"
+    global generation_text
+    generation_time = steps * time_scale // (FPS * 10)
+    generation_text = f"Generation: {int(generation_time)}   " \
+                      f"Speed: {int(time_scale)}"
 
 
 class SpeedUpButton(Button):
@@ -185,8 +219,7 @@ class SlowDownButton(Button):
         # This function decreases the simulation speed when the button is clicked
         global time_scale
         if time_scale > 0.1:
-            time_scale = max(min_time_scale,
-                             time_scale - 0.1)  # Decrease the time scale factor but not below the minimum
+            time_scale = max(min_time_scale,time_scale - 0.1)  # Decrease the time scale factor but not below the minimum
 
 
 class NormalSpeedButton(Button):
@@ -217,13 +250,6 @@ slow_down_button = SlowDownButton(FAUNA_WIDTH + 20, 400, 150, 50, "Slow Down", G
 normal_speed_button = NormalSpeedButton(FAUNA_WIDTH + 20, 500, 150, 50, "Normal Speed", GREEN, GREEN)
 speed_up_button = SpeedUpButton(FAUNA_WIDTH + 20, 300, 150, 50, "Speed Up", GREEN, GREEN)
 generation_text = update_generation(0)
-left_zone = pygame.Rect(0, 0, 0.1 * FAUNA_WIDTH, FAUNA_HEIGHT)
-right_zone = pygame.Rect(0.9 * FAUNA_WIDTH, 0, 0.1 * FAUNA_WIDTH, FAUNA_HEIGHT)
-middle_zone = pygame.Rect(FAUNA_WIDTH // 2 - 50, FAUNA_HEIGHT // 2 - 50, 100, 100)
-top_left=pygame.Rect(0, 0, 0.1 * FAUNA_WIDTH, 0.1 * FAUNA_HEIGHT)
-top_right=pygame.Rect(0.9 * FAUNA_WIDTH, 0, 0.1 * FAUNA_WIDTH, 0.1 * FAUNA_HEIGHT)
-bottom_left= pygame.Rect(0, 0.9 * FAUNA_HEIGHT, 0.1 * FAUNA_WIDTH, 0.1 * FAUNA_HEIGHT)
-bottom_right = pygame.Rect(0.9 * FAUNA_WIDTH, 0.9 * FAUNA_HEIGHT, 0.1 * FAUNA_WIDTH, 0.1 * FAUNA_HEIGHT)
 
 # Fitness Fonksiyonu
 def fitness(ind):
@@ -236,8 +262,7 @@ def fitness(ind):
     else:
         return 0.0  # Diğer durumlarda 0 puan
 
-# Oyun döngüsünde fitness değerlerini topla ve ölü yaratıkları çıkar
-def update_fitness_and_remove_dead():
+def update_fitness_and_remove_dead(steps):
     total_fitness = 0
     dead_individuals = []
 
@@ -258,23 +283,39 @@ def update_fitness_and_remove_dead():
     for dead_ind in dead_individuals:
         fauna_sprites.remove(dead_ind)
 
+    if steps * time_scale % (FPS * 10) == 0:
+        update_generation(steps)  # Update the generation text
+
+        new_generation = pygame.sprite.Group()
+        for _ in range(Population):
+            parents = tournament_selection(fauna_sprites, tournament_size=3)
+            if parents is not None:
+                parent1, parent2 = parents
+                child = parent1.crossover(parent2)
+                child.mutate()
+                new_generation.add(child)
+
+        fauna_sprites.empty()
+        fauna_sprites.add(*new_generation.sprites())
+
     return total_fitness
+
 def tournament_selection(population, tournament_size):
-    # Popülasyon sayısından küçük bir turnuva boyutu belirleyelim
-    tournament_size = min(tournament_size, len(population.sprites()))
+    selected_parents = []
+    for _ in range(2):  # Select two parents for crossover
+        if len(population) < tournament_size:
+            return None  # Handle the case where the population is smaller than the tournament size
+        participants = random.sample(population.sprites(), k=tournament_size)
+        selected_parent = max(participants, key=lambda ind: fitness(ind))
+        selected_parents.append(selected_parent)
 
-    # Popülasyon büyüklüğü turnuva boyutundan küçükse, turnuva boyutunu popülasyon büyüklüğüne ayarla
-    if tournament_size > len(population.sprites()):
-        tournament_size = len(population.sprites())
+    print("Selected parents genes:")
+    for parent in selected_parents:
+        print(parent.genes)
 
-    # Turnuva seçimi ile örnek seçme
-    participants = random.sample(population.sprites(), k=tournament_size)
+    return selected_parents
 
-    # Eğer populasyon boşsa veya seçilen bireylerden herhangi birisi None ise, hata almamak için None döndür
-    if not participants or None in participants:
-        return None
 
-    return max(participants, key=lambda ind: fitness(ind))
 
 
 running = True
@@ -359,24 +400,25 @@ while running:
 
     pygame.display.flip()
     clock.tick(FPS)
+    total_fitness = update_fitness_and_remove_dead(steps)
     steps += 1
-    total_fitness = update_fitness_and_remove_dead()
 
     if steps * time_scale % (FPS * 10) == 0:
         generation_text = update_generation(steps)
 
-        # Yeni nesli başlat
         new_generation = pygame.sprite.Group()
         for _ in range(Population):
-            # Turnuva seçimi ile ebeveynleri seç
-            parents = [tournament_selection(fauna_sprites, tournament_size=3) for _ in range(2)]
+            parents = tournament_selection(fauna_sprites, tournament_size=3)
+            if parents is not None:
+                parent1, parent2 = parents
+                child = parent1.crossover(parent2)
+                child.mutate()
+                new_generation.add(child)
 
-            # Ebeveynler arasında çaprazlama ve mutasyon
-            child = parents[0].crossover(parents[1])
-            child.mutate()
-            new_generation.add(child)
+        fauna_sprites.empty()  # Clear the old generation
+        fauna_sprites.add(new_generation.sprites())  # Add the new generation to the existing sprite group
 
-        fauna_sprites = new_generation  # Eski nesnenin yerine yeni nesneyi ata
         steps = 0
+
 
 pygame.quit()
